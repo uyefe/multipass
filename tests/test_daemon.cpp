@@ -263,6 +263,10 @@ struct Daemon : public Test
 
         ON_CALL(*mock_factory_ptr, get_backend_version_string()).WillByDefault(Return("mock-1234"));
 
+        ON_CALL(*mock_factory, list_networks())
+            .WillByDefault(Return(std::vector<mp::NetworkInterfaceInfo>{{"eth0", "ethernet", "wired adapter"},
+                                                                        {"wlan0", "wi-fi", "wireless adapter"}}));
+
         config_builder.factory = std::move(mock_factory);
         return mock_factory_ptr;
     }
@@ -779,5 +783,39 @@ INSTANTIATE_TEST_SUITE_P(Daemon, LaunchImgSizeSuite,
                          Combine(Values("test_create", "launch"),
                                  Values(std::vector<std::string>{}, std::vector<std::string>{"--disk", "4G"}),
                                  Values("1G", mp::default_disk_size, "10G")));
+
+TEST_F(Daemon, launches_with_valid_network_interface)
+{
+    mpt::MockVirtualMachineFactory* mock_factory = use_a_mock_vm_factory();
+
+    mp::Daemon daemon{config_builder.build()};
+
+    EXPECT_CALL(*mock_factory, list_networks());
+
+    ASSERT_NO_THROW(send_command({"launch", "--network", "eth0"}));
+}
+
+TEST_F(Daemon, refuses_launch_with_invalid_network_interface)
+{
+    mpt::MockVirtualMachineFactory* mock_factory = use_a_mock_vm_factory();
+
+    mp::Daemon daemon{config_builder.build()};
+
+    EXPECT_CALL(*mock_factory, list_networks());
+
+    std::stringstream err_stream;
+    send_command({"launch", "--network", "eth2"}, std::cout, err_stream);
+    EXPECT_THAT(err_stream.str(), HasSubstr("Invalid network options supplied"));
+}
+
+TEST_F(Daemon, refuses_launch_because_bridging_is_not_implemented)
+{
+    // Use the stub factory, which throws when list_networks() is called.
+    mp::Daemon daemon{config_builder.build()};
+
+    std::stringstream err_stream;
+    send_command({"launch", "--network", "eth0"}, std::cout, err_stream);
+    EXPECT_THAT(err_stream.str(), HasSubstr("The --network feature is not implemented on this backend"));
+}
 
 } // namespace
