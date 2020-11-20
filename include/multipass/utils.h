@@ -18,7 +18,7 @@
 #ifndef MULTIPASS_UTILS_H
 #define MULTIPASS_UTILS_H
 
-#include <multipass/logging/level.h>
+#include <multipass/logging/log.h>
 #include <multipass/path.h>
 #include <multipass/ssh/ssh_session.h>
 #include <multipass/virtual_machine.h>
@@ -123,6 +123,9 @@ QString make_uuid();
 template <typename OnTimeoutCallable, typename TryAction, typename... Args>
 void try_action_for(OnTimeoutCallable&& on_timeout, std::chrono::milliseconds timeout, TryAction&& try_action,
                     Args&&... args);
+template <class Exception>
+void log_and_throw_exception(const std::string& category, const multipass::logging::Level level,
+                             const std::string& message);
 
 } // namespace utils
 } // namespace multipass
@@ -159,6 +162,15 @@ template <typename RegisteredQtEnum>
 std::string multipass::utils::qenum_to_string(RegisteredQtEnum val)
 {
     return qenum_to_qstring(val).toStdString();
+}
+
+template <class Exception>
+void multipass::utils::log_and_throw_exception(const std::string& category, const multipass::logging::Level level,
+                                               const std::string& message)
+{
+    multipass::logging::log(level, category, message);
+
+    throw Exception(message);
 }
 
 #endif // MULTIPASS_UTILS_H
