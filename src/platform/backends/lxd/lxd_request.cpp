@@ -20,6 +20,7 @@
 #include <multipass/format.h>
 #include <multipass/logging/log.h>
 #include <multipass/network_access_manager.h>
+#include <multipass/utils.h>
 #include <multipass/version.h>
 
 #include <QEventLoop>
@@ -29,17 +30,11 @@
 
 namespace mp = multipass;
 namespace mpl = multipass::logging;
+namespace mpu = multipass::utils;
 
 namespace
 {
 constexpr auto request_category = "lxd request";
-
-void log_and_throw_error(const std::string& message, mpl::Level level)
-{
-    mpl::log(level, request_category, message);
-
-    throw std::runtime_error(message);
-}
 
 template <typename Callable>
 const QJsonObject lxd_request_common(const std::string& method, QUrl& url, int timeout, Callable&& handle_request)
@@ -88,34 +83,39 @@ const QJsonObject lxd_request_common(const std::string& method, QUrl& url, int t
         throw mp::LXDNotFoundException();
 
     if (reply->error() == QNetworkReply::OperationCanceledError)
-        log_and_throw_error(fmt::format("Timeout getting response for {} operation on {}", method, url.toString()),
-                            mpl::Level::warning);
+        mpu::log_and_throw_exception<std::runtime_error>(
+            request_category, mpl::Level::warning,
+            fmt::format("Timeout getting response for {} operation on {}", method, url.toString()));
 
     auto bytearray_reply = reply->readAll();
     reply->deleteLater();
 
     if (bytearray_reply.isEmpty())
-        log_and_throw_error(fmt::format("Empty reply received for {} operation on {}", method, url.toString()),
-                            mpl::Level::error);
+        mpu::log_and_throw_exception<std::runtime_error>(
+            request_category, mpl::Level::error,
+            fmt::format("Empty reply received for {} operation on {}", method, url.toString()));
 
     QJsonParseError json_error;
     auto json_reply = QJsonDocument::fromJson(bytearray_reply, &json_error);
 
     if (json_error.error != QJsonParseError::NoError)
-        log_and_throw_error(fmt::format("Error parsing JSON response for {}: {}\n{}", url.toString(),
-                                        json_error.errorString(), bytearray_reply),
-                            mpl::Level::error);
+        mpu::log_and_throw_exception<std::runtime_error>(request_category, mpl::Level::error,
+                                                         fmt::format("Error parsing JSON response for {}: {}\n{}",
+                                                                     url.toString(), json_error.errorString(),
+                                                                     bytearray_reply));
 
     if (json_reply.isNull() || !json_reply.isObject())
-        log_and_throw_error(fmt::format("Invalid LXD response for {}: {}", url.toString(), bytearray_reply),
-                            mpl::Level::error);
+        mpu::log_and_throw_exception<std::runtime_error>(
+            request_category, mpl::Level::error,
+            fmt::format("Invalid LXD response for {}: {}", url.toString(), bytearray_reply));
 
     mpl::log(mpl::Level::trace, request_category, fmt::format("Got reply: {}", QJsonDocument(json_reply).toJson()));
 
     if (reply->error() != QNetworkReply::NoError)
-        log_and_throw_error(fmt::format("Network error for {}: {} - {}", url.toString(), reply->errorString(),
-                                        json_reply.object()["error"].toString()),
-                            mpl::Level::error);
+        mpu::log_and_throw_exception<std::runtime_error>(request_category, mpl::Level::error,
+                                                         fmt::format("Network error for {}: {} - {}", url.toString(),
+                                                                     reply->errorString(),
+                                                                     json_reply.object()["error"].toString()));
 
     return json_reply.object();
 }
@@ -170,19 +170,21 @@ const QJsonObject mp::lxd_wait(mp::NetworkAccessManager* manager, const QUrl& ba
 
         if (task_reply["error_code"].toInt() >= 400)
         {
-            log_and_throw_error(fmt::format("Error waiting on operation: {}", task_reply["error"].toString()),
-                                mpl::Level::error);
+            mpu::log_and_throw_exception<std::runtime_error>(
+                request_category, mpl::Level::error,
+                fmt::format("Error waiting on operation: {}", task_reply["error"].toString()));
         }
         else if (task_reply["status_code"].toInt() == 400)
         {
-            log_and_throw_error(fmt::format("Failure waiting on operation: {}", task_reply["status"].toString()),
-                                mpl::Level::error);
+            mpu::log_and_throw_exception<std::runtime_error>(
+                request_category, mpl::Level::error,
+                fmt::format("Failure waiting on operation: {}", task_reply["status"].toString()));
         }
         else if (task_reply["metadata"].toObject()["status_code"].toInt() == 400)
         {
-            log_and_throw_error(
-                fmt::format("Operation completed with error: {}", task_reply["metadata"].toObject()["err"].toString()),
-                mpl::Level::error);
+            mpu::log_and_throw_exception<std::runtime_error>(
+                request_category, mpl::Level::error,
+                fmt::format("Operation completed with error: {}", task_reply["metadata"].toObject()["err"].toString()));
         }
     }
 
